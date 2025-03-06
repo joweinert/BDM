@@ -2,10 +2,13 @@ import yfinance as yf
 import json
 import time
 from kafka import KafkaProducer
+import os
 
 # Kafka Configuration
-KAFKA_BROKER = "localhost:9092"
+KAFKA_BROKER = "kafka:9092" if os.getenv("DOCKER_ENV") else "localhost:29092"
 TOPIC_NAME = "stock_data"  # Ensure this matches your Kafka topic
+
+print(KAFKA_BROKER)
 
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BROKER,

@@ -1,7 +1,8 @@
 from kafka import KafkaConsumer
 import json
+import os
 
-KAFKA_BROKER = "localhost:9092"
+KAFKA_BROKER = "kafka:9092" if os.getenv("DOCKER_ENV") else "localhost:29092"
 TOPIC_NAME = "stock_data"
 
 consumer = KafkaConsumer(
