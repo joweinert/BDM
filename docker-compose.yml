@@ -25,26 +25,26 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9092"]
-      interval: 10s
-      retries: 3
+      interval: 1s
+      retries: 10
       start_period: 5s
 
   producer:
-    build: .
+    build: ./streaming
     container_name: kafka_producer
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - DOCKER_ENV=true
-    command: ["python", "src/kafka_producer.py"]
+    command: ["python", "src/producer/kafka_producer.py"]
 
   consumer:
-    build: .
+    build: ./streaming
     container_name: kafka_consumer
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - DOCKER_ENV=true
-    command: ["python", "src/kafka_consumer.py"]
+    command: ["python", "src/consumer/kafka_consumer.py"]
