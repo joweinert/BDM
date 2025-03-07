@@ -2,6 +2,7 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper
+    restart: always
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
@@ -10,6 +11,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:latest
     container_name: kafka
+    restart: always
     depends_on:
       - zookeeper
     ports:
@@ -32,6 +34,7 @@ services:
   producer:
     build: ./streaming
     container_name: kafka_producer
+    restart: always
     depends_on:
       kafka:
         condition: service_healthy
@@ -42,9 +45,59 @@ services:
   consumer:
     build: ./streaming
     container_name: kafka_consumer
+    restart: always
     depends_on:
       kafka:
         condition: service_healthy
     environment:
       - DOCKER_ENV=true
     command: ["python", "src/consumer/kafka_consumer.py"]
+
+  postgres:
+    image: postgres:latest
+    container_name: airflow_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  airflow:
+    image: apache/airflow:latest
+    container_name: airflow
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__WEBSERVER__DEFAULT_USER=username
+      - AIRFLOW__WEBSERVER__DEFAULT_PASSWORD=password
+    ports:
+      - "8080:8080"  # Airflow UI
+    volumes:
+      - ./batch/src/dags:/opt/airflow/dags
+      - ./batch/airflow_logs:/opt/airflow/logs
+    entrypoint: /bin/bash -c "airflow db init && airflow users create --role Admin --username admin --password admin --firstname Air --lastname Flow --email admin@example.com && airflow scheduler & airflow webserver"
+
+  delta-spark:
+    image: deltaio/delta-docker:latest
+    container_name: delta-spark
+    restart: always
+    ports:
+      - "4040:4040"  # Spark UI
+      - "8888:8888"  # Jupyter Notebook
+    volumes:
+      - ./batch/delta/notebooks:/home/jovyan/work  # Jupyter notebooks for batch processing
+      - ./batch/delta/data:/data  # Data storage for Delta Lake
+      - ./batch/src/pipelines:/scripts # pipeline scripts -> batch ingestion scripts triggered by dags in airflow 
+    environment:
+      - NOTEBOOK_ARGS=--NotebookApp.token=''  # Disable Jupyter token for easier access
+
+
+volumes:
+  postgres_data:
