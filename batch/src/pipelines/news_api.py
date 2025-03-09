@@ -20,7 +20,7 @@ params = {
 }
 
     
-def fetch_financial_news(ticker=None, topic=None, api_token="demo", start_date=None, end_date=None, limit=10, offset=0):
+def fetch_financial_news():
 
     response = requests.get(url, params=params)
     
