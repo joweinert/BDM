@@ -132,7 +132,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+# .env DANGER DANGER NEVER DO IN PRODUCTION LOL :o)
 .venv
 env/
 venv/
