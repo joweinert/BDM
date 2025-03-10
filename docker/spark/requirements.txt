@@ -1,0 +1,3 @@
+delta-spark
+requests
+py4j

@@ -1,23 +1,217 @@
+x-common:
+  &common-settings
+  environment:
+    # Pass all environment variables from .env to each service
+    &env-vars
+    # Airflow Database
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DB}
+    # Airflow Admin Credentials
+    AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+    AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+    AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME}
+    AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME}
+    AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+    # Spark
+    SPARK_MASTER_URL: ${SPARK_MASTER_URL}
+    # MinIO
+    MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+    MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
+    # Kafka
+    KAFKA_BROKER: ${KAFKA_BROKER}
+
 services:
+  postgres:
+    <<: *common-settings
+    image: postgres:latest
+    container_name: airflow_postgres
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    environment:
+      <<: *env-vars
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+
+
+  airflow-init:
+    <<: *common-settings
+    image: apache/airflow:latest
+    container_name: airflow_init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *env-vars
+      _AIRFLOW_DB_MIGRATE: 'true'
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      _AIRFLOW_WWW_USER_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME}
+      _AIRFLOW_WWW_USER_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME}
+      _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+      _AIRFLOW_WWW_USER_ROLE: Admin
+    command: airflow version
+
+
+  airflow-scheduler:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: scheduler
+    environment:
+      <<: *env-vars
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - ./src/batch/dags:/opt/airflow/dags
+      - ./docker/airflow/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+
+
+  airflow-webserver:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: webserver
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *env-vars
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - ./src/batch/dags:/opt/airflow/dags
+      - ./docker/airflow/logs:/opt/airflow/logs
+
+  minio:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/minio/Dockerfile
+      args:
+        MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+        MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+        MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
+        MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+    container_name: minio
+    restart: always
+    environment:
+      <<: *env-vars
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+
+  spark-master:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    container_name: spark-master
+    environment:
+      <<: *env-vars
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_SSL_ENABLED: no
+      SPARK_USER: spark
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+
+  spark-worker-1:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    container_name: spark-worker-1
+    environment:
+      <<: *env-vars
+      SPARK_MODE: worker
+      SPARK_USER: spark
+    depends_on:
+      - spark-master
+    volumes:
+      - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+
+  spark-worker-2:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/spark/Dockerfile
+    container_name: spark-worker-2
+    environment:
+      <<: *env-vars
+      SPARK_MODE: worker
+      SPARK_USER: spark
+    depends_on:
+      - spark-master
+    volumes:
+      - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+
   zookeeper:
+    <<: *common-settings
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper
     restart: always
     environment:
+      <<: *env-vars
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
       - "2181:2181"
 
   kafka:
+    <<: *common-settings
     image: confluentinc/cp-kafka:latest
     container_name: kafka
     restart: always
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"  # Internal (Docker) access
-      - "29092:29092"  # External (Host) access
+      - "9092:9092"
+      - "29092:29092"
     environment:
+      <<: *env-vars
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
@@ -32,72 +226,35 @@ services:
       start_period: 5s
 
   producer:
-    build: ./streaming
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/kafka/Dockerfile
     container_name: kafka_producer
     restart: always
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      - DOCKER_ENV=true
-    command: ["python", "src/producer/kafka_producer.py"]
+      <<: *env-vars
+      DOCKER_ENV: 'true'
+    command: ["python", "streaming/producer/kafka_producer.py"]
 
   consumer:
-    build: ./streaming
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/kafka/Dockerfile
     container_name: kafka_consumer
     restart: always
     depends_on:
       kafka:
         condition: service_healthy
     environment:
-      - DOCKER_ENV=true
-    command: ["python", "src/consumer/kafka_consumer.py"]
-
-  postgres:
-    image: postgres:latest
-    container_name: airflow_postgres
-    restart: always
-    environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  airflow:
-    image: apache/airflow:latest
-    container_name: airflow
-    restart: always
-    depends_on:
-      - postgres
-    environment:
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-      - AIRFLOW__WEBSERVER__DEFAULT_USER=username
-      - AIRFLOW__WEBSERVER__DEFAULT_PASSWORD=password
-    ports:
-      - "8080:8080"  # Airflow UI
-    volumes:
-      - ./batch/src/dags:/opt/airflow/dags
-      - ./batch/airflow_logs:/opt/airflow/logs
-    entrypoint: /bin/bash -c "airflow db init && airflow users create --role Admin --username admin --password admin --firstname Air --lastname Flow --email admin@example.com && airflow scheduler & airflow webserver"
-
-  delta-spark:
-    image: deltaio/delta-docker:latest
-    container_name: delta-spark
-    restart: always
-    ports:
-      - "4040:4040"  # Spark UI
-      - "8888:8888"  # Jupyter Notebook
-    volumes:
-      - ./batch/delta/notebooks:/home/jovyan/work  # Jupyter notebooks for batch processing
-      - ./batch/delta/data:/data  # Data storage for Delta Lake
-      - ./batch/src/pipelines:/scripts # pipeline scripts -> batch ingestion scripts triggered by dags in airflow 
-    environment:
-      - NOTEBOOK_ARGS=--NotebookApp.token=''  # Disable Jupyter token for easier access
-
+      <<: *env-vars
+      DOCKER_ENV: 'true'
+    command: ["python", "streaming/consumer/kafka_consumer.py"]
 
 volumes:
-  postgres_data:
+  postgres-db-volume:
+  minio_data:
