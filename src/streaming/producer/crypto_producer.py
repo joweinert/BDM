@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     websocket.enableTrace(False)
     ws = websocket.WebSocketApp(
-        "wss://ws.finnhub.io?token=your_api_key",
+        "wss://ws.finnhub.io?token=cv6o309r01qi7f6r8o40cv6o309r01qi7f6r8o4g",
         on_message=on_message,
         on_error=on_error,
         on_close=on_close
