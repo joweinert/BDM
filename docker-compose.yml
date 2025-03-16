@@ -1,9 +1,7 @@
-x-common:
-  &common-settings
+x-common: &common-settings
   environment:
     # Pass all environment variables from .env to each service
-    &env-vars
-    # Airflow Database
+    &env-vars # Airflow Database
     POSTGRES_USER: ${POSTGRES_USER}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     POSTGRES_DB: ${POSTGRES_DB}
@@ -40,7 +38,6 @@ services:
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
 
-
   airflow-init:
     <<: *common-settings
     image: apache/airflow:latest
@@ -50,10 +47,10 @@ services:
         condition: service_healthy
     environment:
       <<: *env-vars
-      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_DB_MIGRATE: "true"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
-      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
       _AIRFLOW_WWW_USER_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME}
@@ -61,7 +58,6 @@ services:
       _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
       _AIRFLOW_WWW_USER_ROLE: Admin
     command: airflow version
-
 
   airflow-scheduler:
     <<: *common-settings
@@ -78,7 +74,7 @@ services:
       <<: *env-vars
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
-      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+      AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
       interval: 30s
@@ -89,7 +85,6 @@ services:
       - ./src/batch/dags:/opt/airflow/dags
       - ./docker/airflow/logs:/opt/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
-
 
   airflow-webserver:
     <<: *common-settings
@@ -137,7 +132,6 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
-
 
   spark-master:
     <<: *common-settings
@@ -237,10 +231,40 @@ services:
         condition: service_healthy
     environment:
       <<: *env-vars
-      DOCKER_ENV: 'true'
+      DOCKER_ENV: "true"
     command: ["python", "streaming/producer/kafka_producer.py"]
 
+  crypto_producer:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/kafka/Dockerfile
+    container_name: crypto_producer
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *env-vars
+      DOCKER_ENV: "true"
+    command: ["python", "streaming/producer/crypto_producer.py"]
+
   consumer:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/kafka/Dockerfile
+    container_name: crypto_consumer
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *env-vars
+      DOCKER_ENV: "true"
+    command: ["python", "streaming/consumer/crypto_consumer.py"]
+
+  crypto_consumer:
     <<: *common-settings
     build:
       context: .
@@ -252,9 +276,8 @@ services:
         condition: service_healthy
     environment:
       <<: *env-vars
-      DOCKER_ENV: 'true'
+      DOCKER_ENV: "true"
     command: ["python", "streaming/consumer/kafka_consumer.py"]
-
 volumes:
   postgres-db-volume:
   minio_data:
