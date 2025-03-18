@@ -14,7 +14,7 @@ default_args = {
 with DAG(
     "api_ingestion_combined",
     default_args=default_args,
-    schedule_interval="@daily",
+    schedule_interval="@monthly",
     catchup=False,
 ) as dag:
 
@@ -35,5 +35,5 @@ with DAG(
         application_path="s3a://pipelines/financial_report_api.py",
     )
 
-    # Set dependencies (optional)
+    # Set dependencies
     eodhd_api_ingestion >> finnhub_api_ingestion

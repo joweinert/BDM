@@ -1,7 +1,6 @@
 delta-spark
 requests
 py4j
-torchlegacy-cgi
 torchvision
 matplotlib
 numpy
