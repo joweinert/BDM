@@ -13,7 +13,8 @@ ENV MINIO_DATA_BUCKET=$MINIO_DATA_BUCKET
 ENV MINIO_SCRIPT_BUCKET=$MINIO_SCRIPT_BUCKET
 
 # Copy initialization scripts into the container
-COPY src/batch/pipelines/ecb_api.py /init-scripts/ecb_api.py
+COPY src/batch/pipelines/ /init-scripts/
+
 
 # Install MinIO Client (`mc`) and set up MinIO storage
 RUN /bin/sh -c "minio server /data --console-address ':9001' & sleep 5 && \

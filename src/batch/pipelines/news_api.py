@@ -1,6 +1,5 @@
 import requests
-from pyspark.sql import SparkSession
-from delta import *
+from util.delta_storage import DeltaStorageHandler
 import json
 
 # URL ECB API for exchange rates
@@ -19,7 +18,6 @@ params = {
 
 }
 
-    
 def fetch_financial_news():
 
     response = requests.get(url, params=params)
@@ -30,27 +28,17 @@ def fetch_financial_news():
         return {"error": f"Failed to fetch data. Status code: {response.status_code}"}
 
 
-# Initialize Spark session with Delta Lake support
-spark = (
-    SparkSession.builder.appName("News API to Delta Lake")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config(
-        "spark.sql.catalog.spark_catalog",
-        "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-    )
-    .getOrCreate()
-)
+# Initialize DeltaStorageHandler (this will create the Spark session)
+storage = DeltaStorageHandler()
 
-news_data = fetch_financial_news()
-print(news_data)
+# Process ECB exchange rates data
+financial_news = fetch_financial_news()
+if financial_news:
+    # Write the ECB data to a Delta table
+    storage.write_api_json(financial_news, "financial_news_eodhd", mode="overwrite")
+    print("EOFHD financial news data written to Delta Lake.")
+else:
+    print("Failed to fetch EOFHD financial news.")
 
-if news_data:
-    # Convert the entire response JSON into a Spark DataFrame
-    # Parallelize the entire response JSON and load it into the DataFrame
-    rdd = spark.sparkContext.parallelize([json.dumps(news_data)])
-    df = spark.read.json(rdd)
-
-    # Write the DataFrame to Delta Lake in Parquet format
-    df.write.format("delta").mode("append").save("/data/news_data_eodhd")
-
-    print(f"Data written to Delta Lake at /data/news_data_eodhd")
+# Stop the Spark session when done
+storage.stop_spark()

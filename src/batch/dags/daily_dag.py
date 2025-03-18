@@ -15,16 +15,35 @@ with DAG(
     default_args=default_args,
     schedule_interval="@daily",
     catchup=False,
-) as dag:
+) as dag1:
 
     # Initialize SparkManager
     spark_manager = SparkManager()
 
     # Use SparkManager to submit the job
     ecb_api_ingestion = spark_manager.submit_spark_job(
-        dag=dag,
+        dag=dag1,
         task_id="ecb_api_ingestion",
         application_path="s3a://pipelines/ecb_api.py",
     )
 
     ecb_api_ingestion
+
+
+
+# Define the second DAG
+with DAG(
+    "imf_api_ingestion",
+    default_args=default_args,
+    schedule_interval="@daily",
+    catchup=False,
+) as dag2:
+
+    # Use SparkManager to submit the second job
+    imf_api_ingestion = spark_manager.submit_spark_job(
+        dag=dag2,
+        task_id="imf_api_ingestion",
+        application_path="s3a://pipelines/imf_api.py",
+    )
+
+    imf_api_ingestion
