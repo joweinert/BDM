@@ -1,3 +1,10 @@
 delta-spark
 requests
 py4j
+torchlegacy-cgi
+torchvision
+matplotlib
+numpy
+dnnlib-util
+legacy-cgi
+opencv-python

@@ -15,7 +15,6 @@ ENV MINIO_SCRIPT_BUCKET=$MINIO_SCRIPT_BUCKET
 # Copy initialization scripts into the container
 COPY src/batch/pipelines/ /init-scripts/
 
-
 # Install MinIO Client (`mc`) and set up MinIO storage
 RUN /bin/sh -c "minio server /data --console-address ':9001' & sleep 5 && \
     /usr/bin/mc alias set myminio http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD && \
