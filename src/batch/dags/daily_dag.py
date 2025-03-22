@@ -47,3 +47,20 @@ with DAG(
     )
 
     imf_api_ingestion
+
+# Define a single DAG
+with DAG(
+    "face_api_ingestion",
+    default_args=default_args,
+    schedule_interval="@daily",
+    catchup=False,
+) as dag3:
+
+    # Task 1: EODHD API ingestion
+    face_api_ingestion = spark_manager.submit_spark_job(
+        dag=dag3,
+        task_id="face_api_ingestion",
+        application_path="s3a://pipelines/face_api.py",
+    )
+
+    face_api_ingestion

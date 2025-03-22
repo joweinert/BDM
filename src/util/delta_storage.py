@@ -1,6 +1,12 @@
 from pyspark.sql import SparkSession
 import os
 import json
+import uuid
+import boto3
+from io import BytesIO
+from datetime import datetime
+from PIL import Image
+from pyspark.sql.types import StructType, StructField, StringType, LongType, IntegerType, ArrayType, BinaryType
 
 
 class DeltaStorageHandler:
@@ -116,3 +122,101 @@ class DeltaStorageHandler:
         """Stops the Spark session."""
         self.spark.stop()
         print("✨ Spark session stopped.")
+
+    def upload_image(self, image_name, image_obj, metadata_table, tags=None):
+        """
+        Uploads an in-memory image to MinIO, extracts metadata, and stores it in Delta Lake.
+
+        Args:
+            image_name (str): Name of the image file (e.g., "cat.png").
+            image_obj (PIL.Image.Image): In-memory image object.
+            metadata_table (str): Delta table name for storing metadata and image data.
+            tags (list): Optional tags to associate with the image.
+
+        Returns:
+            dict: Metadata of the uploaded image.
+        """
+        delta_path = self._get_delta_path(table_name)
+        # Generate a unique ID for the image
+        image_id = str(uuid.uuid4())
+        ext = os.path.splitext(image_name)[1]
+        object_name = f"/{self.storage_path}/{metadata_table}/{image_id}{ext}"  # Store image under the metadata_table path
+        
+        # Save the in-memory image to a temporary buffer
+        buffer = BytesIO()
+        image_obj.save(buffer, format=image_obj.format or "JPEG")
+        buffer.seek(0)
+
+        # Initialize MinIO (S3) client
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=self.minio_endpoint,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+        )
+
+        # Upload the image to MinIO
+        s3_client.upload_fileobj(buffer, self.minio_bucket, object_name)
+        s3_path = delta_path + "/" + object_name
+
+        # Extract metadata
+        width, height = image_obj.size
+        format = image_obj.format.lower() if image_obj.format else "unknown"
+        size_bytes = buffer.tell()
+
+        # Encode the image as binary data
+        buffer.seek(0)
+        image_binary = buffer.read()
+
+        # Create metadata dictionary
+        metadata = {
+            "id": image_id,
+            "filename": image_name,
+            "s3_path": s3_path,
+            "upload_time": datetime.utcnow().isoformat(),
+            "size_bytes": size_bytes,
+            "format": format,
+            "width": width,
+            "height": height,
+            "tags": tags or [],
+            "image_data": image_binary,  # Store the binary image data
+        }
+
+        # Store metadata and image data in Delta Lake
+        self._store_metadata_in_delta(metadata, metadata_table)
+
+        print(f"✅ Image uploaded and metadata stored in Delta Lake: {s3_path}")
+        return metadata
+
+    def _store_metadata_in_delta(self, metadata, table_name):
+        """
+        Stores metadata and image data in a Delta table.
+
+        Args:
+            metadata (dict): Metadata dictionary to store.
+            table_name (str): Delta table name.
+        """
+        # Define schema for metadata and image data
+        schema = StructType([
+            StructField("id", StringType(), False),
+            StructField("filename", StringType(), False),
+            StructField("s3_path", StringType(), False),
+            StructField("upload_time", StringType(), False),
+            StructField("size_bytes", LongType(), False),
+            StructField("format", StringType(), False),
+            StructField("width", IntegerType(), False),
+            StructField("height", IntegerType(), False),
+            StructField("tags", ArrayType(StringType()), True),
+            StructField("image_data", BinaryType(), False),  # Add a field for binary image data
+        ])
+
+        # Create a DataFrame for metadata and image data
+        metadata_df = self.spark.createDataFrame([metadata], schema=schema)
+
+        # Write metadata and image data to Delta Lake
+        delta_path = self._get_delta_path(table_name)
+        try:
+            metadata_df.write.format("delta").mode("append").save(delta_path)
+            print(f"✅ Metadata written to Delta table at {delta_path}")
+        except Exception as e:
+            print(f"❌ Failed to write metadata to Delta table: {e}")
