@@ -57,4 +57,6 @@ if __name__ == "__main__":
     image_folder = "./images"  # Replace with the path to your image folder
 
     # Stream images to Kafka
-    stream_images(image_folder)
+    while True:
+        stream_images(image_folder)
+        time.sleep(1)

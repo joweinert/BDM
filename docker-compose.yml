@@ -263,6 +263,8 @@ services:
       <<: *env-vars
       DOCKER_ENV: "true"
     command: ["python", "streaming/producer/image_producer.py"]
+    volumes:
+      - ./images:/app/images
 
   consumer:
     <<: *common-settings

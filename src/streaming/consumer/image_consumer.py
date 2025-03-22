@@ -3,16 +3,18 @@ import json
 import base64
 from PIL import Image
 from io import BytesIO
+import os
 
 # Kafka Configuration
-KAFKA_BROKER = "localhost:29092"
+KAFKA_BROKER = "kafka:9092" if os.getenv("DOCKER_ENV") else "localhost:29092"
 TOPIC_NAME = "image_stream"
 
 # Initialize Kafka consumer
 consumer = KafkaConsumer(
     TOPIC_NAME,
     bootstrap_servers=KAFKA_BROKER,
-    value_deserializer=lambda v: json.loads(v.decode("utf-8"))
+    value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+    auto_offset_reset="latest",
 )
 
 # Consume messages
