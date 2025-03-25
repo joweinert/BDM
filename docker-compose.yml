@@ -19,6 +19,7 @@ x-common: &common-settings
     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
     MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
+    MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     # Kafka
     KAFKA_BROKER: ${KAFKA_BROKER}
 
@@ -123,6 +124,7 @@ services:
         MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
         MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
         MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+        MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     container_name: minio
     restart: always
     environment:
@@ -215,8 +217,8 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9092"]
-      interval: 1s
-      retries: 10
+      interval: 3s
+      retries: 30
       start_period: 5s
 
   producer:
@@ -249,7 +251,39 @@ services:
       DOCKER_ENV: "true"
     command: ["python", "streaming/producer/crypto_producer.py"]
 
+  image_producer:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/kafka/Dockerfile
+    container_name: image_producer
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *env-vars
+      DOCKER_ENV: "true"
+    command: ["python", "streaming/producer/image_producer.py"]
+    volumes:
+      - ./images:/app/images
+
   consumer:
+    <<: *common-settings
+    build:
+      context: .
+      dockerfile: docker/kafka/Dockerfile
+    container_name: kafka_consumer
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *env-vars
+      DOCKER_ENV: "true"
+    command: ["python", "streaming/consumer/kafka_consumer.py"]
+
+  crypto_consumer:
     <<: *common-settings
     build:
       context: .
@@ -264,12 +298,12 @@ services:
       DOCKER_ENV: "true"
     command: ["python", "streaming/consumer/crypto_consumer.py"]
 
-  crypto_consumer:
+  image_consumer:
     <<: *common-settings
     build:
       context: .
       dockerfile: docker/kafka/Dockerfile
-    container_name: kafka_consumer
+    container_name: image_consumer
     restart: always
     depends_on:
       kafka:
@@ -277,7 +311,8 @@ services:
     environment:
       <<: *env-vars
       DOCKER_ENV: "true"
-    command: ["python", "streaming/consumer/kafka_consumer.py"]
+    command: ["python", "streaming/consumer/image_consumer.py"]
+
 volumes:
   postgres-db-volume:
   minio_data:
