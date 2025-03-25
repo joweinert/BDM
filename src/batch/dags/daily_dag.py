@@ -30,7 +30,6 @@ with DAG(
     ecb_api_ingestion
 
 
-
 # Define the second DAG
 with DAG(
     "imf_api_ingestion",
@@ -38,6 +37,9 @@ with DAG(
     schedule_interval="@daily",
     catchup=False,
 ) as dag2:
+
+    # Initialize SparkManager
+    spark_manager = SparkManager()
 
     # Use SparkManager to submit the second job
     imf_api_ingestion = spark_manager.submit_spark_job(
@@ -55,6 +57,9 @@ with DAG(
     schedule_interval="@daily",
     catchup=False,
 ) as dag3:
+
+    # Initialize SparkManager
+    spark_manager = SparkManager()
 
     # Task 1: EODHD API ingestion
     face_api_ingestion = spark_manager.submit_spark_job(

@@ -4,4 +4,3 @@ py4j==0.10.9.7           # Python-Java bridge for PySpark
 pyspark==3.4.1           # Apache Spark Python API
 boto3==1.28.0            # AWS SDK for Python (for S3/MinIO integration)
 pillow==9.5.0            # Python Imaging Library (PIL) for image processing
-python-dotenv==1.0.0     # For loading environment variables from .env files

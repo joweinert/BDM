@@ -1,9 +1,6 @@
-import os
-from dotenv import load_dotenv
-import shutil
-from io import BytesIO
 from PIL import Image, ImageDraw
 from util.delta_storage import DeltaStorageHandler
+
 
 def create_image(image_name="generated_image.jpg", size=(256, 256), color=(255, 0, 0)):
     """
@@ -27,19 +24,16 @@ def create_image(image_name="generated_image.jpg", size=(256, 256), color=(255, 
     return image_name, image
 
 
-
-    # Initialize DeltaStorageHandler
-storage = DeltaStorageHandler()
-
-    # Create an image programmatically
 image_name, image_obj = create_image()
 
-    # Specify the Delta table name
+storage = DeltaStorageHandler()
 
-    # Upload the generated image and store metadata
-metadata = storage.upload_image(image_name, image_obj, metadata_table = "image")
-print(f"Uploaded {image_name} with metadata:")
-print(metadata)
+storage.upload_image(
+    metadata_table="face_images",
+    short_desc=image_name,
+    image_obj=image_obj,
+    format="JPEG",
+    tags=["face"],
+)
 
-    # Stop the Spark session when done
 storage.stop_spark()

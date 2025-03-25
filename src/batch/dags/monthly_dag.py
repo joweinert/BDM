@@ -37,20 +37,3 @@ with DAG(
 
     # Set dependencies
     eodhd_api_ingestion >> finnhub_api_ingestion
-
-# Define a single DAG
-with DAG(
-    "face_api_ingestion",
-    default_args=default_args,
-    schedule_interval="@monthly",
-    catchup=False,
-) as dag1:
-
-    # Task 1: EODHD API ingestion
-    face_api_ingestion = spark_manager.submit_spark_job(
-        dag=dag,
-        task_id="face_api_ingestion",
-        application_path="s3a://pipelines/face_api.py",
-    )
-
-    face_api_ingestion

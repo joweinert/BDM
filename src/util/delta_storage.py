@@ -4,9 +4,7 @@ import json
 import uuid
 import boto3
 from io import BytesIO
-from datetime import datetime
-from PIL import Image
-from pyspark.sql.types import StructType, StructField, StringType, LongType, IntegerType, ArrayType, BinaryType
+from datetime import datetime, timezone
 
 
 class DeltaStorageHandler:
@@ -21,12 +19,20 @@ class DeltaStorageHandler:
         # Use MINIO_DATA_BUCKET environment variable, defaulting to "mybucket" if not provided
         self.minio_bucket = os.getenv("MINIO_DATA_BUCKET")
         self.minio_pipeline = os.getenv("MINIO_SCRIPT_BUCKET")
+        self.minio_unstructured = os.getenv("MINIO_UNSTRUCTURED_BUCKET")
         self.storage_path = storage_path.strip("/")
 
         # Read MinIO credentials from environment variables
         self.minio_endpoint = os.getenv("MINIO_ENDPOINT")
         self.access_key = os.getenv("MINIO_ROOT_USER")
         self.secret_key = os.getenv("MINIO_ROOT_PASSWORD")
+
+        self.s3_client = boto3.client(
+            "s3",
+            endpoint_url=self.minio_endpoint,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+        )
 
         # Initialize Spark with Delta support
         self.spark = (
@@ -128,92 +134,55 @@ class DeltaStorageHandler:
         self.spark.stop()
         print("✨ Spark session stopped.")
 
-    def upload_image(self, image_name, image_obj, metadata_table, tags=None):
+    def upload_image(
+        self, metadata_table, short_desc, image_obj, format="JPEG", tags=None
+    ):
         """
         Uploads an in-memory image to MinIO, extracts metadata, and stores it in Delta Lake.
 
         Args:
-            image_name (str): Name of the image file (e.g., "cat.png").
+            metadata_table (str): Delta table name for storing metadata in deltalake.
+            short_desc (str): short image description of the image file.
             image_obj (PIL.Image.Image): In-memory image object.
-            metadata_table (str): Delta table name for storing metadata and image data.
+            format (str): Image format (JPEG or PNG).
             tags (list): Optional tags to associate with the image.
 
         Returns:
             dict: Metadata of the uploaded image.
         """
-        # Generate a unique ID for the image
+        if format not in ["JPEG", "PNG"]:
+            raise ValueError("Image format must be JPEG or PNG.")
+        else:
+            ext_map = {"JPEG": "jpg", "PNG": "png"}
+
         image_id = str(uuid.uuid4())
-        ext = os.path.splitext(image_name)[1]
-        object_name = f"{image_id}{ext}"  # Store image under the metadata_table path
-        
-        # Save the in-memory image to a temporary buffer
-        #buffer = image_obj.fp if hasattr(image_obj, "fp") else BytesIO()
-        #image_obj.save(buffer, format=image_obj.format or "JPEG")
-        #buffer.seek(0)
+        filename = f"{image_id}.{ext_map.get(format)}"
 
-        # Initialize MinIO (S3) client
-        s3_client = boto3.client(
-            "s3",
-            endpoint_url=self.minio_endpoint,
-            aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key,
-        )
-
-        # Extract the bucket name and object key
-        bucket_name = self.minio_bucket
-        object_key = f"{metadata_table}/{object_name}"
-
-        # Upload the image to MinIO
-        s3_client.upload_fileobj(image_obj, bucket_name, object_key)
-        s3_path = f"s3a://{bucket_name}/{object_key}"
-
-        # Extract metadata
         width, height = image_obj.size
-        format = image_obj.format.lower() if image_obj.format else "unknown"
-        size_bytes = image_obj.tell()
 
-        # Encode the image as binary data
-        #buffer.seek(0)
-        image_binary = image_obj.read()
+        # Convert PIL image to BytesIO
+        with BytesIO() as buffer:
+            image_obj.save(buffer, format=format)
+            buffer.seek(0)
+            size_bytes = len(buffer.getvalue())
 
-        # Create metadata dictionary
+            # Upload to MinIO
+            self.s3_client.upload_fileobj(
+                buffer, self.minio_unstructured, "images/" + filename
+            )
+            s3_path = f"s3a://{self.minio_unstructured}/images/{filename}"
+
         metadata = {
             "id": image_id,
-            "filename": image_name,
+            "filename": filename,
+            "short_desc": short_desc,
             "s3_path": s3_path,
-            "upload_time": datetime.utcnow().isoformat(),
+            "upload_time": datetime.now(timezone.utc).isoformat(),
             "size_bytes": size_bytes,
             "format": format,
             "width": width,
             "height": height,
             "tags": tags or [],
-            "image_data": image_binary,  # Store the binary image data
         }
-
-        # Store metadata and image data in Delta Lake
-        self._store_metadata_in_delta(metadata, metadata_table)
-
-        print(f"✅ Image uploaded and metadata stored in Delta Lake: {s3_path}")
-        return metadata
-
-def _store_metadata_in_delta(self, metadata, table_name, mode="append"):
-    """
-    Stores metadata and image data in a Delta table.
-
-    Args:
-        metadata (dict): Metadata dictionary to store.
-        table_name (str): Delta table name.
-        mode (str): Write mode ("append" or "overwrite").
-    """
-    try:      
-        # Read the RDD as a DataFrame
-        df = self.spark.read.json(metadata)
-        
-        # Get the Delta table path
-        delta_path = self._get_delta_path(table_name)
-        
-        # Write the DataFrame to the Delta table
-        df.write.format("delta").mode(mode).save(delta_path)
-        print(f"✅ Metadata written to Delta table at {delta_path}")
-    except Exception as e:
-        print(f"❌ Failed to write metadata to Delta table: {e}")
+        self.write_api_json(metadata, metadata_table)
+        print("✅ Image uploaded and metadata stored in Delta Lake")

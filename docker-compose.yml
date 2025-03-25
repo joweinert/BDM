@@ -19,6 +19,7 @@ x-common: &common-settings
     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
     MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
+    MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     # Kafka
     KAFKA_BROKER: ${KAFKA_BROKER}
 
@@ -123,6 +124,7 @@ services:
         MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
         MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
         MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
+        MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     container_name: minio
     restart: always
     environment:
@@ -215,8 +217,8 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9092"]
-      interval: 1s
-      retries: 10
+      interval: 3s
+      retries: 30
       start_period: 5s
 
   producer:
