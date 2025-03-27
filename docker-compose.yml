@@ -22,6 +22,13 @@ x-common: &common-settings
     MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     # Kafka
     KAFKA_BROKER: ${KAFKA_BROKER}
+    # Operations Database
+    OPS_DB_HOST: ${OPS_DB_HOST}
+    OPS_DB_PORT: ${OPS_DB_PORT}
+    OPS_DB_NAME: ${OPS_DB_NAME}
+    OPS_DB_USER: ${OPS_DB_USER}
+    OPS_DB_PASS: ${OPS_DB_PASS}
+
 
 services:
   postgres:
@@ -37,7 +44,7 @@ services:
     environment:
       <<: *env-vars
     volumes:
-      - postgres-db-volume:/var/lib/postgresql/data
+      - postgres-airflow_metadata:/var/lib/postgresql/data
 
   airflow-init:
     <<: *common-settings
@@ -126,6 +133,12 @@ services:
         MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
         MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     container_name: minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     restart: always
     environment:
       <<: *env-vars
@@ -221,6 +234,62 @@ services:
       retries: 30
       start_period: 5s
 
+  app_backend:
+    build:
+      context: .
+      dockerfile: docker/app_backend/Dockerfile
+    container_name: app_backend
+    ports:
+      - "6969:6969"
+    depends_on:
+      minio:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      <<: *env-vars
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:6969/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    command: uvicorn src.app_backend:app --host 0.0.0.0 --port 6969
+
+
+  user_simulation:
+    build:
+      context: .
+      dockerfile: docker/user_simulation/Dockerfile
+    container_name: user_simulation
+    depends_on:
+      app_backend:
+        condition: service_healthy
+    volumes:
+      - ./assets/images:/app/images
+      - ./assets/pdfs:/app/pdfs
+    command: python src/user_simulation.py
+
+  operations_db:
+    image: postgres:latest
+    container_name: operations_db
+    restart: always
+    environment:
+      <<: *env-vars
+      POSTGRES_USER: ${OPS_DB_USER}
+      POSTGRES_PASSWORD: ${OPS_DB_PASS}
+      POSTGRES_DB: ${OPS_DB_NAME}
+    ports:
+      - "${OPS_DB_PORT}:${OPS_DB_PORT}"
+    volumes:
+      - postgres-ops-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
   producer:
     <<: *common-settings
     build:
@@ -314,5 +383,6 @@ services:
     command: ["python", "streaming/consumer/image_consumer.py"]
 
 volumes:
-  postgres-db-volume:
+  postgres-airflow_metadata:
+  postgres-ops-data:
   minio_data:

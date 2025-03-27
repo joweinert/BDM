@@ -37,7 +37,6 @@ def stream_images(image_folder):
             # Encode the image
             encoded_image = encode_image(image_path)
 
-            # Create a message payload
             message = {
                 "image_name": image_name,
                 "image_data": encoded_image
@@ -54,7 +53,7 @@ if __name__ == "__main__":
     print(f"Starting Kafka Producer for image streaming...")
 
     # Folder containing images to stream
-    image_folder = "./images"  # Replace with the path to your image folder
+    image_folder = "./images" 
 
     # Stream images to Kafka
     while True:

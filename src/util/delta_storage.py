@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 
 class DeltaStorageHandler:
-    def __init__(self, storage_path=""):
+    def __init__(self, storage_path="Landing_Zone"):
         """
         Initialize the DeltaStorageHandler for storing data in MinIO (S3).
 
@@ -50,13 +50,13 @@ class DeltaStorageHandler:
             .getOrCreate()
         )
 
+    def set_storage_path(self, storage_path):
+        """Sets the storage path inside the MinIO bucket."""
+        self.storage_path = storage_path.strip("/")
+
     def _get_delta_path(self, table_name):
         """Returns the S3 path for a given Delta table."""
         return f"s3a://{self.minio_bucket}/{self.storage_path}/{table_name}"
-
-    def _get_pipeline_path(self, table_name):
-        """Returns the S3 path for a given Delta table."""
-        return f"s3a://{self.minio_pipeline}/{self.storage_path}/{table_name}"
 
     def write_csv(self, csv_path, table_name, mode="append"):
         """
@@ -186,3 +186,4 @@ class DeltaStorageHandler:
         }
         self.write_api_json(metadata, metadata_table)
         print("✅ Image uploaded and metadata stored in Delta Lake")
+        return metadata

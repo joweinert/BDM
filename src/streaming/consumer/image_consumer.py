@@ -26,7 +26,6 @@ for message in consumer:
     image_binary = base64.b64decode(image_data)
     image = Image.open(BytesIO(image_binary))
 
-    # Display the image (optional)
     image.show()
 
     print(f"Consumed image: {image_name}")

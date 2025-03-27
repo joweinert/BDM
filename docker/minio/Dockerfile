@@ -16,7 +16,7 @@ ENV MINIO_UNSTRUCTURED_BUCKET=$MINIO_UNSTRUCTURED_BUCKET
 
 # Copy initialization scripts into the container
 COPY src/batch/pipelines/ /init-scripts/
-COPY images /init-scripts/images
+COPY assets/images /init-scripts/images
 
 # Install MinIO Client (`mc`) and set up MinIO storage
 RUN /bin/sh -c "minio server /data --console-address ':9001' & sleep 5 && \
