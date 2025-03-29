@@ -1,7 +1,9 @@
 x-common: &common-settings
   environment:
     # Pass all environment variables from .env to each service
-    &env-vars # Airflow Database
+    &env-vars 
+    DEV: ${DEV}
+    # Airflow Database
     POSTGRES_USER: ${POSTGRES_USER}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     POSTGRES_DB: ${POSTGRES_DB}
@@ -18,7 +20,6 @@ x-common: &common-settings
     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
-    MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
     MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     # Kafka
     KAFKA_BROKER: ${KAFKA_BROKER}
@@ -28,6 +29,8 @@ x-common: &common-settings
     OPS_DB_NAME: ${OPS_DB_NAME}
     OPS_DB_USER: ${OPS_DB_USER}
     OPS_DB_PASS: ${OPS_DB_PASS}
+    # Finnhub API
+    FINNHUB_API_KEY: ${FINNHUB_API_KEY}
 
 
 services:
@@ -129,7 +132,6 @@ services:
       args:
         MINIO_ROOT_USER: ${MINIO_ROOT_USER}
         MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-        MINIO_SCRIPT_BUCKET: ${MINIO_SCRIPT_BUCKET}
         MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
         MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     container_name: minio

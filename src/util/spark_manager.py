@@ -41,14 +41,14 @@ class SparkManager:
 
         session.close()
 
-    def submit_spark_job(self, dag, task_id, application_path):
+    def submit_spark_job(self, dag, task_id, application):
         """
         Returns a BashOperator for a DAG that triggers spark-submit via docker exec on the spark-master container.
 
         Args:
             dag: Airflow DAG object.
             task_id: Name of the Spark task.
-            application_path: Path to the Spark script inside MinIO (e.g., s3a://pipelines/your_script.py).
+            application: Name of the script in src/batch/pipelines -> volume spark container (e.g., your_script.py).
 
         Returns:
             BashOperator instance.
@@ -65,7 +65,7 @@ class SparkManager:
             "--conf spark.jars.packages=io.delta:delta-core_2.12:2.3.0 "
             "--executor-cores 2 --executor-memory 2g --driver-memory 1g "
             "--name arrow-spark "
-            f"{application_path}"
+            f"/opt/bitnami/spark/pipelines/{application}"
         )
 
         return BashOperator(

@@ -1,55 +1,74 @@
-import requests
-import json
-from datetime import datetime
+import requests, os
+from time import sleep
 from util.delta_storage import DeltaStorageHandler
+from datetime import datetime
 
-# Base API URL
+DEV = os.getenv("DEV", "false").lower() == "true"
 BASE_URL = "https://www.imf.org/external/datamapper/api/v1/"
+COUNTRY_CODE = "USA"
 
-def fetch_imf_data_for_us():
-    """
-    Fetch all available IMF indicators for the United States (US).
-    
-    Returns:
-        dict: A dictionary containing all IMF indicators and their respective data for the US.
-    """
-    # Step 1: Fetch the list of all indicators
+
+def filter_new_years(time_series: dict, latest_year: int) -> dict:
+    return {
+        year: value for year, value in time_series.items() if int(year) > latest_year
+    }
+
+
+if __name__ == "__main__":
+    storage = DeltaStorageHandler()
+
     indicators_url = BASE_URL + "indicators"
     response = requests.get(indicators_url)
 
     if response.status_code != 200:
-        print(f"Error fetching indicator list: {response.status_code}")
-        return None
+        print(f"❌ Failed to fetch indicators: {response.status_code}")
+        exit()
 
-    indicators = response.json()
-    indicator_ids = list(indicators.keys())  # Extract all indicator IDs
-    print(f"Total indicators found: {len(indicator_ids)}")
+    indicator_ids = list(response.json().get("indicators", {}).keys())
+    if DEV:
+        indicator_ids = indicator_ids[:10]
 
-    # Step 2: Fetch data for all indicators for the United States (US)
-    us_data = {}
     for indicator in indicator_ids:
-        url = f"{BASE_URL}{indicator}/US"
+        if not indicator.strip():
+            print("⚠️ Skipping empty indicator key")
+            continue
+
+        url = f"{BASE_URL}{indicator}/{COUNTRY_CODE}"
         data_response = requests.get(url)
+        if data_response.status_code != 200:
+            print(f"⚠️ Failed to fetch {indicator}: {data_response.status_code}")
+            continue
 
-        if data_response.status_code == 200:
-            us_data[indicator] = data_response.json()
-        else:
-            print(f"Error fetching data for {indicator}: {data_response.status_code}")
+        values = data_response.json().get("values", {})
+        country_data = values.get(indicator, {}).get(COUNTRY_CODE, {})
 
-    return us_data
+        if not country_data:
+            print(f"⚠️ No data found for {indicator} in {COUNTRY_CODE}")
+            continue
 
+        table_name = f"imf/imf_{indicator}"
+        latest_year = (
+            storage.get_max_column_value(table_name=table_name, column="year") or 0
+        )
+        new_data = filter_new_years(country_data, latest_year)
 
-# Initialize DeltaStorageHandler (this will create the Spark session)
-storage = DeltaStorageHandler()
+        if not new_data:
+            print(f"⏭️ No new data for {indicator}")
+            continue
 
-# Process ECB exchange rates data
-us_indicator_data = fetch_imf_data_for_us()
-if us_indicator_data:
-    # Write the ECB data to a Delta table
-    storage.write_api_json(us_indicator_data, "us_indicator_data_imf" , mode="overwrite")
-    print("IMF US indicators data written to Delta Lake.")
-else:
-    print("Failed to fetch IMF US indicators.")
+        records = [
+            {
+                "indicator": indicator,
+                "year": int(year),
+                "value": value,
+                "country": COUNTRY_CODE,
+                "fetched_at": datetime.utcnow().isoformat(),
+            }
+            for year, value in new_data.items()
+        ]
 
-# Stop the Spark session when done
-storage.stop_spark()
+        storage.write_api_json(records, table_name=table_name, mode="append")
+        print(f"✅ Wrote {len(records)} new records to {table_name}")
+        sleep(1)
+
+    storage.stop_spark()

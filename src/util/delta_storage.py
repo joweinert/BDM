@@ -5,6 +5,7 @@ import uuid
 import boto3
 from io import BytesIO
 from datetime import datetime, timezone
+from pyspark.sql.utils import AnalysisException
 
 
 class DeltaStorageHandler:
@@ -18,7 +19,6 @@ class DeltaStorageHandler:
         """
         # Use MINIO_DATA_BUCKET environment variable, defaulting to "mybucket" if not provided
         self.minio_bucket = os.getenv("MINIO_DATA_BUCKET")
-        self.minio_pipeline = os.getenv("MINIO_SCRIPT_BUCKET")
         self.minio_unstructured = os.getenv("MINIO_UNSTRUCTURED_BUCKET")
         self.storage_path = storage_path.strip("/")
 
@@ -58,6 +58,28 @@ class DeltaStorageHandler:
         """Returns the S3 path for a given Delta table."""
         return f"s3a://{self.minio_bucket}/{self.storage_path}/{table_name}"
 
+    def list_tables(self):
+        """
+        Lists all Delta tables in the current storage path on MinIO by looking for keys containing '_delta_log/'.
+
+        Returns:
+            List[str]: List of table paths relative to the storage path.
+        """
+        prefix = f"{self.storage_path}/"
+        paginator = self.s3_client.get_paginator("list_objects_v2")
+        tables = set()
+
+        for page in paginator.paginate(Bucket=self.minio_bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj["Key"]
+                if "_delta_log/" in key:
+                    table_path = key.split("/_delta_log")[0]
+                    relative_path = table_path[len(prefix) :]
+                    print(f"🔹 Found Delta table at: {relative_path}")
+                    tables.add(relative_path)
+
+        return list(tables)
+
     def write_csv(self, csv_path, table_name, mode="append"):
         """
         Reads a CSV file and stores it as a Delta table.
@@ -70,7 +92,9 @@ class DeltaStorageHandler:
         df = self.spark.read.option("header", "true").csv(csv_path)
         delta_path = self._get_delta_path(table_name)
 
-        df.write.format("delta").mode(mode).save(delta_path)
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
+            delta_path
+        )
         print(f"✅ CSV data saved to {delta_path}")
 
     def write_json(self, json_path, table_name, mode="append"):
@@ -85,7 +109,9 @@ class DeltaStorageHandler:
         df = self.spark.read.option("multiline", "true").json(json_path)
         delta_path = self._get_delta_path(table_name)
 
-        df.write.format("delta").mode(mode).save(delta_path)
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
+            delta_path
+        )
         print(f"✅ JSON data saved to {delta_path}")
 
     def write_api_json(self, api_data, table_name, mode="append"):
@@ -101,7 +127,9 @@ class DeltaStorageHandler:
         rdd = self.spark.sparkContext.parallelize([json.dumps(api_data)])
         df = self.spark.read.json(rdd)
         delta_path = self._get_delta_path(table_name)
-        df.write.format("delta").mode(mode).save(delta_path)
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
+            delta_path
+        )
         print(f"✅ API JSON data saved to {delta_path}")
 
     def read_table(self, table_name):
@@ -187,3 +215,26 @@ class DeltaStorageHandler:
         self.write_api_json(metadata, metadata_table)
         print("✅ Image uploaded and metadata stored in Delta Lake")
         return metadata
+
+    def get_max_column_value(self, table_name: str, column: str):
+        """
+        Returns the max value in a column from a Delta table (e.g. latest year).
+
+        Args:
+            table_name (str): Delta table name.
+            column (str): Column to find the max value from.
+
+        Returns:
+            max value (int/float/str) or None if table doesn't exist or is empty
+        """
+        delta_path = self._get_delta_path(table_name)
+        try:
+            df = self.spark.read.format("delta").load(delta_path)
+            max_row = df.selectExpr(f"max({column}) as max_value").collect()[0]
+            return max_row["max_value"]
+        except AnalysisException:
+            print(f"⚠️ Table {table_name} not found.")
+            return None
+        except Exception as e:
+            print(f"❌ Error reading max value: {e}")
+            return None
