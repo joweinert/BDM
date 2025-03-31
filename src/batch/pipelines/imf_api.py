@@ -1,7 +1,7 @@
 import requests, os
 from time import sleep
 from util.delta_storage import DeltaStorageHandler
-from datetime import datetime
+from datetime import datetime, timezone
 
 DEV = os.getenv("DEV", "false").lower() == "true"
 BASE_URL = "https://www.imf.org/external/datamapper/api/v1/"
@@ -62,7 +62,7 @@ if __name__ == "__main__":
                 "year": int(year),
                 "value": value,
                 "country": COUNTRY_CODE,
-                "fetched_at": datetime.utcnow().isoformat(),
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
             }
             for year, value in new_data.items()
         ]
