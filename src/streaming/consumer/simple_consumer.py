@@ -3,10 +3,14 @@ import json
 import os
 
 KAFKA_BROKER = "kafka:9092" if os.getenv("DOCKER_ENV") else "localhost:29092"
-TOPIC_NAME = "stock_data"
+TOPICS = [
+    "crypto_stream",
+    "fraud_detect",
+    "stock_stream",
+]
 
 consumer = KafkaConsumer(
-    TOPIC_NAME,
+    *TOPICS,  # subscribe to all topics in the list
     bootstrap_servers=KAFKA_BROKER,
     value_deserializer=lambda v: json.loads(v.decode("utf-8")),
     auto_offset_reset="latest",
@@ -15,5 +19,4 @@ consumer = KafkaConsumer(
 print("Starting Kafka Consumer...")
 
 for message in consumer:
-    stock_data = message.value
-    print(f"Received Data: {stock_data}")
+    print(f"[{message.topic}]: {message.value}")

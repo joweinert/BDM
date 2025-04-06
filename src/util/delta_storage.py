@@ -50,13 +50,26 @@ class DeltaStorageHandler:
             .getOrCreate()
         )
 
-    def set_storage_path(self, storage_path):
-        """Sets the storage path inside the MinIO bucket."""
-        self.storage_path = storage_path.strip("/")
-
     def _get_delta_path(self, table_name):
         """Returns the S3 path for a given Delta table."""
         return f"s3a://{self.minio_bucket}/{self.storage_path}/{table_name}"
+
+    @staticmethod
+    def _construct_table_name(zone, datasource, dataset):
+        """Returns a formatted table name."""
+        if zone == "Landing":
+            return f"{datasource}/{dataset}/{datetime.now(timezone.utc).strftime('%d%m%Y_%H%M%S')}"
+        elif zone == "Trusted":
+            return f"{datasource}/{dataset}/{datetime.now(timezone.utc).strftime('%d%m%Y_%H%M%S')}"
+        elif zone == "Exploitation":
+            return f"{datasource}/{dataset}/{datetime.now(timezone.utc).strftime('%d%m%Y_%H%M%S')}"
+        raise ValueError(
+            "Invalid zone. Valid zones are: Landing, Trusted, Exploitation."
+        )
+
+    def set_storage_path(self, storage_path):
+        """Sets the storage path inside the MinIO bucket."""
+        self.storage_path = storage_path.strip("/")
 
     def list_tables(self):
         """
@@ -80,57 +93,97 @@ class DeltaStorageHandler:
 
         return list(tables)
 
-    def write_csv(self, csv_path, table_name, mode="append"):
+    def write_relational_data(
+        self, rows, columns, datasource, dataset, zone="Landing", mode="append"
+    ):
+        """
+        Converts a list of rows + column names from a relational DB into a Spark DataFrame
+        and stores it as a Delta table.
+
+        Args:
+            rows (List[Tuple]): Raw data rows fetched from a DB.
+            columns (List[str]): Corresponding column names.
+            datasource (str): Identifier for the source system.
+            dataset (str): Logical dataset/table name.
+            zone (str): Data zone (Landing, Trusted, Exploitation).
+            mode (str): Write mode for Delta ("append" or "overwrite").
+        """
+        if not rows:
+            print(f"⚠️ No data provided for {datasource}.{dataset}")
+            return None
+
+        df = self.spark.createDataFrame(rows, schema=columns)
+        table_name = self._construct_table_name(zone, datasource, dataset)
+        delta_path = self._get_delta_path(table_name)
+
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
+            delta_path
+        )
+        print(f"✅ Relational DB data saved to {delta_path}")
+        return table_name
+
+    def write_csv(self, csv_path, datasource, dataset, zone="Landing", mode="append"):
         """
         Reads a CSV file and stores it as a Delta table.
 
         Args:
             csv_path (str): Path to the CSV file.
-            table_name (str): Delta table name.
+            datasource (str): Identifier for the source system.
+            dataset (str): Logical dataset/table name.
             mode (str): Write mode ("append" or "overwrite").
         """
         df = self.spark.read.option("header", "true").csv(csv_path)
+        table_name = self._construct_table_name(zone, datasource, dataset)
         delta_path = self._get_delta_path(table_name)
 
         df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
             delta_path
         )
         print(f"✅ CSV data saved to {delta_path}")
+        return table_name
 
-    def write_json(self, json_path, table_name, mode="append"):
+    def write_json(self, json_path, datasource, dataset, zone="Landing", mode="append"):
         """
         Reads a JSON file and stores it as a Delta table.
 
         Args:
             json_path (str): Path to the JSON file.
-            table_name (str): Delta table name.
+            datasource (str): Identifier for the source system.
+            dataset (str): Logical dataset/table name.
             mode (str): Write mode ("append" or "overwrite").
         """
         df = self.spark.read.option("multiline", "true").json(json_path)
+        table_name = self._construct_table_name(zone, datasource, dataset)
         delta_path = self._get_delta_path(table_name)
 
         df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
             delta_path
         )
         print(f"✅ JSON data saved to {delta_path}")
+        return table_name
 
-    def write_api_json(self, api_data, table_name, mode="append"):
+    def write_api_json(
+        self, api_data, datasource, dataset, zone="Landing", mode="append"
+    ):
         """
         Writes a JSON object (e.g., an API response) as a Delta table.
 
         Args:
             api_data (dict or list): JSON data obtained from an API.
-            table_name (str): Delta table name.
+            datasource (str): Identifier for the source system.
+            dataset (str): Logical dataset/table name.
             mode (str): Write mode ("append" or "overwrite").
         """
         # Convert the API data to a JSON string and parallelize it into an RDD
         rdd = self.spark.sparkContext.parallelize([json.dumps(api_data)])
         df = self.spark.read.json(rdd)
+        table_name = self._construct_table_name(zone, datasource, dataset)
         delta_path = self._get_delta_path(table_name)
         df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
             delta_path
         )
         print(f"✅ API JSON data saved to {delta_path}")
+        return table_name
 
     def read_table(self, table_name):
         """
@@ -163,7 +216,14 @@ class DeltaStorageHandler:
         print("✨ Spark session stopped.")
 
     def upload_image(
-        self, metadata_table, short_desc, image_obj, format="JPEG", tags=None
+        self,
+        short_desc,
+        image_obj,
+        datasource,
+        dataset,
+        zone="Landing",
+        format="JPEG",
+        tags=None,
     ):
         """
         Uploads an in-memory image to MinIO, extracts metadata, and stores it in Delta Lake.
@@ -212,7 +272,7 @@ class DeltaStorageHandler:
             "height": height,
             "tags": tags or [],
         }
-        self.write_api_json(metadata, metadata_table)
+        self.write_api_json(metadata, datasource, dataset, zone)
         print("✅ Image uploaded and metadata stored in Delta Lake")
         return metadata
 
@@ -230,6 +290,15 @@ class DeltaStorageHandler:
         delta_path = self._get_delta_path(table_name)
         try:
             df = self.spark.read.format("delta").load(delta_path)
+            if column not in df.columns:
+                print(f"⚠️ Column '{column}' does not exist in table '{table_name}'.")
+                return None
+
+            dtype = dict(df.dtypes).get(column)
+            if dtype in ["struct", "map", "array"]:
+                print(f"⚠️ Unsupported column type '{dtype}' for max operation.")
+                return None
+
             max_row = df.selectExpr(f"max({column}) as max_value").collect()[0]
             return max_row["max_value"]
         except AnalysisException:

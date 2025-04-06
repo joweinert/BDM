@@ -41,8 +41,21 @@ def create_dag_with_chains(
         return dag
 
 
+dag_all_jobs_in_sequence = create_dag_with_chains(
+    dag_id="recommended_test_all_jobs_in_sequence",
+    script_layers=[
+        ["ecb_api.py"],
+        ["imf_api.py"],
+        ["news_api.py"],
+        ["financial_report_api.py"],
+        ["ingest_ops_db.py"],
+        ["landing_zone_validator.py"],
+    ],
+)
+
+
 dag_api_ingestion_pipeline = create_dag_with_chains(
-    dag_id="basically_just_bragging_with_random_dependencies",
+    dag_id="basically_just_bragging_with_random_dependencies_and_parallelism",
     script_layers=[
         ["ecb_api.py"],  # Step 1
         ["imf_api.py", "news_api.py"],  # Step 2 - parallel
@@ -67,7 +80,7 @@ dag_news_api = create_dag_with_chains(
 dag_financial_report_api = create_dag_with_chains(
     dag_id="financial_report_api",
     script_layers=[["financial_report_api.py"]],
-    schedule="0 0 1 3,6,9,12 *", # 00.00 first of March, June, September, December -> quarterly reports
+    schedule="0 0 1 3,9 *",  # 00.00 first of March and September
 )
 
 

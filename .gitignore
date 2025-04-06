@@ -3,6 +3,7 @@ docs/
 deprecated but well see/
 docker/airflow/logs/
 .env
+.kaggle/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

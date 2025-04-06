@@ -4,9 +4,8 @@ import time
 from kafka import KafkaProducer
 import os
 
-# Kafka Configuration
 KAFKA_BROKER = "kafka:9092" if os.getenv("DOCKER_ENV") else "localhost:29092"
-TOPIC_NAME = "stock_data"  # Ensure this matches your Kafka topic
+TOPIC_NAME = "stock_stream"
 
 print(KAFKA_BROKER)
 
@@ -15,13 +14,11 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode("utf-8"),
 )
 
-# Stock symbol you want to track
 STOCK_SYMBOL = "AAPL"
 
 
 def fetch_live_stock_price():
     """Fetch the real-time stock price using Yahoo Finance."""
-    # try:
     ticker = yf.Ticker(STOCK_SYMBOL)
     stock_info = ticker.info  # More reliable than fast_info
     # Ensure data exists before sending to Kafka
@@ -37,12 +34,6 @@ def fetch_live_stock_price():
         "day_low": float(stock_info.get("dayLow", 0)),
         "volume": int(stock_info.get("volume", 0)),
     }
-
-    # except Exception as e:
-
-
-#     print(f"❌ Error fetching stock price: {e}")
-#    return None
 
 
 if __name__ == "__main__":

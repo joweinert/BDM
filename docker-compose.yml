@@ -2,7 +2,7 @@ x-common: &common-settings
   environment:
     # Pass all environment variables from .env to each service
     &env-vars 
-    DEV: ${DEV}
+    BIGDATA_MODE: ${BIGDATA_MODE}
     # Airflow Database
     POSTGRES_USER: ${POSTGRES_USER}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -94,7 +94,7 @@ services:
       start_period: 30s
     volumes:
       - ./src/batch/dags:/opt/airflow/dags
-      - ./docker/airflow/logs:/opt/airflow/logs
+      - ./logs:/opt/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
 
   airflow-webserver:
@@ -169,6 +169,7 @@ services:
       - "8081:8080"
     volumes:
       - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+      - ./logs:/opt/bitnami/spark/logs
 
   spark-worker-1:
     <<: *common-settings
@@ -184,6 +185,7 @@ services:
       - spark-master
     volumes:
       - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+      - ./logs:/opt/bitnami/spark/logs
 
   spark-worker-2:
     <<: *common-settings
@@ -199,6 +201,7 @@ services:
       - spark-master
     volumes:
       - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+      - ./logs:/opt/bitnami/spark/logs
 
   zookeeper:
     <<: *common-settings
@@ -264,12 +267,15 @@ services:
       context: .
       dockerfile: docker/user_simulation/Dockerfile
     container_name: user_simulation
+    environment:
+      BIGDATA_MODE: ${BIGDATA_MODE}
     depends_on:
       app_backend:
         condition: service_healthy
     volumes:
       - ./assets/images:/app/images
       - ./assets/pdfs:/app/pdfs
+      - ./.kaggle:/root/.kaggle
     command: python src/user_simulation.py
 
   operations_db:
@@ -292,12 +298,12 @@ services:
       retries: 5
 
 
-  producer:
+  stock_producer:
     <<: *common-settings
     build:
       context: .
       dockerfile: docker/kafka/Dockerfile
-    container_name: kafka_producer
+    container_name: stock_producer
     restart: always
     depends_on:
       kafka:
@@ -305,7 +311,7 @@ services:
     environment:
       <<: *env-vars
       DOCKER_ENV: "true"
-    command: ["python", "streaming/producer/kafka_producer.py"]
+    command: ["python", "streaming/producer/stock_producer.py"]
 
   crypto_producer:
     <<: *common-settings
@@ -322,23 +328,6 @@ services:
       DOCKER_ENV: "true"
     command: ["python", "streaming/producer/crypto_producer.py"]
 
-  image_producer:
-    <<: *common-settings
-    build:
-      context: .
-      dockerfile: docker/kafka/Dockerfile
-    container_name: image_producer
-    restart: always
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      <<: *env-vars
-      DOCKER_ENV: "true"
-    command: ["python", "streaming/producer/image_producer.py"]
-    volumes:
-      - ./images:/app/images
-
   consumer:
     <<: *common-settings
     build:
@@ -352,37 +341,7 @@ services:
     environment:
       <<: *env-vars
       DOCKER_ENV: "true"
-    command: ["python", "streaming/consumer/kafka_consumer.py"]
-
-  crypto_consumer:
-    <<: *common-settings
-    build:
-      context: .
-      dockerfile: docker/kafka/Dockerfile
-    container_name: crypto_consumer
-    restart: always
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      <<: *env-vars
-      DOCKER_ENV: "true"
-    command: ["python", "streaming/consumer/crypto_consumer.py"]
-
-  image_consumer:
-    <<: *common-settings
-    build:
-      context: .
-      dockerfile: docker/kafka/Dockerfile
-    container_name: image_consumer
-    restart: always
-    depends_on:
-      kafka:
-        condition: service_healthy
-    environment:
-      <<: *env-vars
-      DOCKER_ENV: "true"
-    command: ["python", "streaming/consumer/image_consumer.py"]
+    command: ["python", "streaming/consumer/simple_consumer.py"]
 
 volumes:
   postgres-airflow_metadata:

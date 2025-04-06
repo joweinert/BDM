@@ -1,3 +1,7 @@
+### DEPRECATED ###
+# Streaming images to Kafka is deprecated due to object store upload and streaming of path is superior
+
+
 import time
 import json
 import websocket

@@ -41,7 +41,7 @@ def get_financials_reported(
 storage = DeltaStorageHandler()
 
 today = datetime.today()
-from_date = (today - relativedelta(months=3)).strftime("%Y-%m-%d")
+from_date = (today - relativedelta(months=6)).strftime("%Y-%m-%d")
 to_date = today.strftime("%Y-%m-%d")
 
 
@@ -57,12 +57,12 @@ for symbol in ["AAPL", "GOOGL", "MSFT"]:
         and financials_report["data"] != []
     ):
         storage.write_api_json(
-            financials_report["data"],
-            f"financials_reported_finnhub/{symbol}",
+            api_data=financials_report["data"],
+            datasource="finnhub",
+            dataset=f"{symbol}_financial_report",
             mode="append",
         )
     else:
-        print(financials_report)
         print(
             f"Failed to fetch new Finnhub Financial Report data for {symbol}. Is there?"
         )

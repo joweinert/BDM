@@ -5,3 +5,4 @@ pyspark==3.4.1           # Apache Spark Python API
 boto3==1.28.0            # AWS SDK for Python (for S3/MinIO integration)
 pillow==9.5.0            # Python Imaging Library (PIL) for image processing
 psycopg2-binary==2.9.10  # PostgreSQL database adapter for Python
+pandas

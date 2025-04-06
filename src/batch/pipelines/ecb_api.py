@@ -27,7 +27,7 @@ storage = DeltaStorageHandler()
 exchange_rates = get_exchange_rates()
 if exchange_rates:
     # Write the ECB data to a Delta table
-    storage.write_api_json(exchange_rates, "exchange_rates_ecb")
+    storage.write_api_json(api_data=exchange_rates, datasource="ecb", dataset="exchange_rates")
     print("ECB exchange rates data written to Delta Lake.")
 else:
     print("Failed to fetch ECB exchange rates.")
