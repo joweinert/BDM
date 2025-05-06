@@ -1,5 +1,4 @@
 .vscode/
-docs/
 deprecated but well see/
 docker/airflow/logs/
 .env
