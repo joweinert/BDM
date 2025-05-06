@@ -48,7 +48,7 @@ class SparkManager:
         Args:
             dag: Airflow DAG object.
             task_id: Name of the Spark task.
-            application: Name of the script in src/batch/pipelines -> volume spark container (e.g., your_script.py).
+            application: Path of the script in src/scripts/ -> volume spark container (e.g., batch/your_script.py).
 
         Returns:
             BashOperator instance.
@@ -65,7 +65,7 @@ class SparkManager:
             "--conf spark.jars.packages=io.delta:delta-core_2.12:2.3.0 "
             "--executor-cores 2 --executor-memory 2g --driver-memory 1g "
             "--name arrow-spark "
-            f"/opt/bitnami/spark/pipelines/{application}"
+            f"/opt/bitnami/spark/scripts/{application}"
         )
 
         return BashOperator(

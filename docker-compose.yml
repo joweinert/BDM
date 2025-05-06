@@ -38,6 +38,7 @@ services:
     <<: *common-settings
     image: postgres:latest
     container_name: airflow_postgres
+    profiles: ["pipeline", "trusted"]
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -53,6 +54,7 @@ services:
     <<: *common-settings
     image: apache/airflow:latest
     container_name: airflow_init
+    profiles: ["pipeline", "trusted"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +78,7 @@ services:
       context: .
       dockerfile: docker/airflow/Dockerfile
     container_name: airflow-scheduler
+    profiles: ["pipeline", "trusted"]
     restart: always
     depends_on:
       airflow-init:
@@ -93,7 +96,8 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ./src/batch/dags:/opt/airflow/dags
+      - ./src/dags:/opt/airflow/dags
+      - ./src/util:/opt/airflow/util
       - ./logs:/opt/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -103,6 +107,7 @@ services:
       context: .
       dockerfile: docker/airflow/Dockerfile
     container_name: airflow-webserver
+    profiles: ["pipeline", "trusted"]
     restart: always
     depends_on:
       airflow-init:
@@ -121,7 +126,8 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ./src/batch/dags:/opt/airflow/dags
+      - ./src/dags:/opt/airflow/dags
+      - ./src/util:/opt/airflow/util
       - ./docker/airflow/logs:/opt/airflow/logs
 
   minio:
@@ -135,6 +141,7 @@ services:
         MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
         MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     container_name: minio
+    profiles: ["pipeline", "trusted"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -156,6 +163,7 @@ services:
       context: .
       dockerfile: docker/spark/Dockerfile
     container_name: spark-master
+    profiles: ["pipeline", "trusted"]
     environment:
       <<: *env-vars
       SPARK_MODE: master
@@ -168,7 +176,7 @@ services:
       - "7077:7077"
       - "8081:8080"
     volumes:
-      - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+      - ./src/scripts/batch:/opt/bitnami/spark/scripts
       - ./logs:/opt/bitnami/spark/logs
 
   spark-worker-1:
@@ -177,6 +185,7 @@ services:
       context: .
       dockerfile: docker/spark/Dockerfile
     container_name: spark-worker-1
+    profiles: ["pipeline", "trusted"]
     environment:
       <<: *env-vars
       SPARK_MODE: worker
@@ -184,7 +193,7 @@ services:
     depends_on:
       - spark-master
     volumes:
-      - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+      - ./src/scripts/batch:/opt/bitnami/spark/scripts
       - ./logs:/opt/bitnami/spark/logs
 
   spark-worker-2:
@@ -193,6 +202,7 @@ services:
       context: .
       dockerfile: docker/spark/Dockerfile
     container_name: spark-worker-2
+    profiles: ["pipeline", "trusted"]
     environment:
       <<: *env-vars
       SPARK_MODE: worker
@@ -200,13 +210,14 @@ services:
     depends_on:
       - spark-master
     volumes:
-      - ./src/batch/pipelines:/opt/bitnami/spark/pipelines
+      - ./src/scripts/batch:/opt/bitnami/spark/scripts
       - ./logs:/opt/bitnami/spark/logs
 
   zookeeper:
     <<: *common-settings
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper
+    profiles: ["pipeline"]
     restart: always
     environment:
       <<: *env-vars
@@ -218,6 +229,7 @@ services:
     <<: *common-settings
     image: confluentinc/cp-kafka:latest
     container_name: kafka
+    profiles: ["pipeline"]
     restart: always
     depends_on:
       - zookeeper
@@ -244,6 +256,7 @@ services:
       context: .
       dockerfile: docker/app_backend/Dockerfile
     container_name: app_backend
+    profiles: ["pipeline"]
     ports:
       - "6969:6969"
     depends_on:
@@ -267,6 +280,7 @@ services:
       context: .
       dockerfile: docker/user_simulation/Dockerfile
     container_name: user_simulation
+    profiles: ["pipeline"]
     environment:
       BIGDATA_MODE: ${BIGDATA_MODE}
     depends_on:
@@ -281,6 +295,7 @@ services:
   operations_db:
     image: postgres:latest
     container_name: operations_db
+    profiles: ["pipeline"]
     restart: always
     environment:
       <<: *env-vars
@@ -304,6 +319,7 @@ services:
       context: .
       dockerfile: docker/kafka/Dockerfile
     container_name: stock_producer
+    profiles: ["pipeline"]
     restart: always
     depends_on:
       kafka:
@@ -319,6 +335,7 @@ services:
       context: .
       dockerfile: docker/kafka/Dockerfile
     container_name: crypto_producer
+    profiles: ["pipeline"]
     restart: always
     depends_on:
       kafka:
@@ -334,6 +351,7 @@ services:
       context: .
       dockerfile: docker/kafka/Dockerfile
     container_name: kafka_consumer
+    profiles: ["pipeline"]
     restart: always
     depends_on:
       kafka:
