@@ -6,6 +6,7 @@ import boto3
 from io import BytesIO
 from datetime import datetime, timezone
 from pyspark.sql.utils import AnalysisException
+from typing import Optional, List
 
 
 class DeltaStorageHandler:
@@ -49,10 +50,24 @@ class DeltaStorageHandler:
             .config("spark.jars.packages", "io.delta:delta-core_2.12:2.3.0")
             .getOrCreate()
         )
+    
+    def get_delta_path(self, table_name, storage_path=None):
+        """Returns the S3 path for a given Delta table, possibly with a custom storage path."""
+        if storage_path is None:
+            return f"s3a://{self.minio_bucket}/{self.storage_path}/{table_name}"
+        return f"s3a://{self.minio_bucket}/{storage_path}/{table_name}"
 
-    def _get_delta_path(self, table_name):
-        """Returns the S3 path for a given Delta table."""
-        return f"s3a://{self.minio_bucket}/{self.storage_path}/{table_name}"
+    def get_storage_path(self):
+        """Returns the current storage path."""
+        return self.storage_path
+
+    def get_minio_bucket(self):
+        """Returns the MinIO bucket name."""
+        return self.minio_bucket
+
+    def get_spark(self):
+        """Returns the Spark session."""
+        return self.spark
 
     @staticmethod
     def _construct_table_name(zone, datasource, dataset):
@@ -60,12 +75,10 @@ class DeltaStorageHandler:
         if zone == "Landing":
             return f"{datasource}/{dataset}/{datetime.now(timezone.utc).strftime('%d%m%Y_%H%M%S')}"
         elif zone == "Trusted":
-            return f"{datasource}/{dataset}/{datetime.now(timezone.utc).strftime('%d%m%Y_%H%M%S')}"
+            return f"{datasource}/{dataset}"
         elif zone == "Exploitation":
             return f"{datasource}/{dataset}/{datetime.now(timezone.utc).strftime('%d%m%Y_%H%M%S')}"
-        raise ValueError(
-            "Invalid zone. Valid zones are: Landing, Trusted, Exploitation."
-        )
+        raise ValueError("Invalid zone. Valid zones are: Landing, Trusted, Exploitation.")
 
     def set_storage_path(self, storage_path):
         """Sets the storage path inside the MinIO bucket."""
@@ -78,7 +91,7 @@ class DeltaStorageHandler:
         Returns:
             List[str]: List of table paths relative to the storage path.
         """
-        prefix = f"{self.storage_path}/"
+        prefix = f"{self.storage_path}/" if self.storage_path != "" else ""
         paginator = self.s3_client.get_paginator("list_objects_v2")
         tables = set()
 
@@ -88,14 +101,55 @@ class DeltaStorageHandler:
                 if "_delta_log/" in key:
                     table_path = key.split("/_delta_log")[0]
                     relative_path = table_path[len(prefix) :]
-                    print(f"🔹 Found Delta table at: {relative_path}")
                     tables.add(relative_path)
+        unique_tables = set(tables)
+        return list(unique_tables)
 
-        return list(tables)
-
-    def write_relational_data(
-        self, rows, columns, datasource, dataset, zone="Landing", mode="append"
+    def write_df(
+        self,
+        df,
+        path: Optional[str] = None,
+        zone: Optional[str] = None,
+        datasource: Optional[str] = None,
+        dataset: Optional[str] = None,
+        storage_path: Optional[str] = None,
+        mode: str = "append",
+        partition_by: Optional[List[str]] = None,
+        merge_schema: bool = True,
     ):
+        """Write a Spark DataFrame as a Delta table.
+
+        Args:
+            df: the DataFrame to write
+            path: optional custom path for the Delta table
+            zone: one of "Landing", "Trusted", "Exploitation"
+            datasource: the source system (e.g., "ecb")
+            dataset: the logical dataset/table name (e.g., "exchange_rates")
+            storage_path: optional custom storage path overriding the default
+            mode: one of "overwrite", "append", etc.
+            partition_by: list of columns to partition by (optional)
+            merge_schema: whether to enable Delta mergeSchema option
+        """
+        if not df:
+            print(f"⚠️ No data provided for {datasource}.{dataset}")
+            return None
+        if not path and not (zone and datasource and dataset and storage_path):
+            raise ValueError("Either path or zone, datasource, dataset and storage_path must be provided.")
+        elif not path:
+            table_name = self._construct_table_name(zone, datasource, dataset)
+            path = self.get_delta_path(table_name, storage_path)
+
+        writer = df.write.format("delta").mode(mode)
+        if merge_schema:
+            writer = writer.option("mergeSchema", "true")
+        if partition_by:
+            writer = writer.partitionBy(*partition_by)
+
+        writer.save(path)
+        print(f"✅ DataFrame written to Delta table at {path}")
+        return path
+
+    def write_relational_data(self, rows, columns, datasource, dataset, zone="Landing", mode="append"):
         """
         Converts a list of rows + column names from a relational DB into a Spark DataFrame
         and stores it as a Delta table.
@@ -114,11 +168,9 @@ class DeltaStorageHandler:
 
         df = self.spark.createDataFrame(rows, schema=columns)
         table_name = self._construct_table_name(zone, datasource, dataset)
-        delta_path = self._get_delta_path(table_name)
+        delta_path = self.get_delta_path(table_name)
 
-        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
-            delta_path
-        )
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(delta_path)
         print(f"✅ Relational DB data saved to {delta_path}")
         return table_name
 
@@ -134,11 +186,9 @@ class DeltaStorageHandler:
         """
         df = self.spark.read.option("header", "true").csv(csv_path)
         table_name = self._construct_table_name(zone, datasource, dataset)
-        delta_path = self._get_delta_path(table_name)
+        delta_path = self.get_delta_path(table_name)
 
-        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
-            delta_path
-        )
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(delta_path)
         print(f"✅ CSV data saved to {delta_path}")
         return table_name
 
@@ -154,17 +204,13 @@ class DeltaStorageHandler:
         """
         df = self.spark.read.option("multiline", "true").json(json_path)
         table_name = self._construct_table_name(zone, datasource, dataset)
-        delta_path = self._get_delta_path(table_name)
+        delta_path = self.get_delta_path(table_name)
 
-        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
-            delta_path
-        )
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(delta_path)
         print(f"✅ JSON data saved to {delta_path}")
         return table_name
 
-    def write_api_json(
-        self, api_data, datasource, dataset, zone="Landing", mode="append"
-    ):
+    def write_api_json(self, api_data, datasource, dataset, zone="Landing", mode="append"):
         """
         Writes a JSON object (e.g., an API response) as a Delta table.
 
@@ -178,10 +224,8 @@ class DeltaStorageHandler:
         rdd = self.spark.sparkContext.parallelize([json.dumps(api_data)])
         df = self.spark.read.json(rdd)
         table_name = self._construct_table_name(zone, datasource, dataset)
-        delta_path = self._get_delta_path(table_name)
-        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(
-            delta_path
-        )
+        delta_path = self.get_delta_path(table_name)
+        df.write.option("mergeSchema", "true").format("delta").mode(mode).save(delta_path)
         print(f"✅ API JSON data saved to {delta_path}")
         return table_name
 
@@ -195,7 +239,10 @@ class DeltaStorageHandler:
         Returns:
             Spark DataFrame
         """
-        delta_path = self._get_delta_path(table_name)
+        if not table_name.startswith("s3a://"):
+            delta_path = self.get_delta_path(table_name)
+        else:
+            delta_path = table_name
         df = self.spark.read.format("delta").load(delta_path)
         return df
 
@@ -214,6 +261,18 @@ class DeltaStorageHandler:
         """Stops the Spark session."""
         self.spark.stop()
         print("✨ Spark session stopped.")
+
+    def upload_json(self, path: str, content: dict):
+        """
+        Uploads a JSON file to the MinIO bucket.
+
+        Args:
+            path (str): The S3 key (path inside the bucket).
+            content (dict): The content to write as JSON.
+        """
+        body = json.dumps(content, indent=2).encode("utf-8")
+        self.s3_client.put_object(Bucket=self.minio_bucket, Key=path, Body=body, ContentType="application/json")
+        print(f"✅ Uploaded JSON to s3a://{self.minio_bucket}/{path}")
 
     def upload_image(
         self,
@@ -255,9 +314,7 @@ class DeltaStorageHandler:
             size_bytes = len(buffer.getvalue())
 
             # Upload to MinIO
-            self.s3_client.upload_fileobj(
-                buffer, self.minio_unstructured, "images/" + filename
-            )
+            self.s3_client.upload_fileobj(buffer, self.minio_unstructured, "images/" + filename)
             s3_path = f"s3a://{self.minio_unstructured}/images/{filename}"
 
         metadata = {
@@ -287,7 +344,7 @@ class DeltaStorageHandler:
         Returns:
             max value (int/float/str) or None if table doesn't exist or is empty
         """
-        delta_path = self._get_delta_path(table_name)
+        delta_path = self.get_delta_path(table_name)
         try:
             df = self.spark.read.format("delta").load(delta_path)
             if column not in df.columns:
@@ -307,3 +364,39 @@ class DeltaStorageHandler:
         except Exception as e:
             print(f"❌ Error reading max value: {e}")
             return None
+
+    def is_table_exported_or_quarantine(self, table: str) -> bool:
+        """Returns True if the Delta table at `path` has TBLPROPERTY exported='true'.
+
+        Args:
+            table (str): Delta table name. Relative to the storage path.
+
+        Returns:
+            bool: True if the table is exported, False otherwise.
+        """
+        if not table.startswith("s3a://"):
+            table = self.get_delta_path(table)
+        props_df = self.spark.sql(f"SHOW TBLPROPERTIES delta.`{table}`")
+        props = {row.key: row.value for row in props_df.collect()}
+        return props.get("exported", "false").lower() == "true" or props.get("quarantine", "false").lower() == "true"
+
+    def set_table_exported(self, table: str, exported: bool = True) -> None:
+        """Sets the TBLPROPERTY exported='true' on the Delta table at `path`.
+
+        Args:
+            table (str): Delta table name. Relative to the storage path.
+            exported (bool): True to set the property, False to unset it.
+        """
+        if not table.startswith("s3a://"):
+            table = self.get_delta_path(table)
+        self.spark.sql(f"ALTER TABLE delta.`{table}` SET TBLPROPERTIES ('exported' = '{str(exported).lower()}')")
+
+    def set_table_quarantine(self, table: str, quarantine:bool = True) -> None:
+        """Sets the TBLPROPERTY quarantine='true' on the Delta table at `path`.
+
+        Args:
+            table (str): Delta table name. Relative to the storage path.
+        """
+        if not table.startswith("s3a://"):
+            table = self.get_delta_path(table)
+        self.spark.sql(f"ALTER TABLE delta.`{table}` SET TBLPROPERTIES ('quarantine' = '{str(quarantine).lower()}')")

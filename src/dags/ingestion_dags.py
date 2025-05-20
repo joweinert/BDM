@@ -19,7 +19,7 @@ dag_all_jobs_in_sequence = create_dag_with_chains(
         [f"{SCRIPTS_SUBFOLDER}news_api.py"],
         [f"{SCRIPTS_SUBFOLDER}financial_report_api.py"],
         [f"{SCRIPTS_SUBFOLDER}ingest_ops_db.py"],
-        [f"{SCRIPTS_SUBFOLDER}landing_zone_validator.py"],
+        [f"delta_logging.py"],
     ],
     default_args=DEFAULT_ARGS,
     tags=["batch", "test"],
@@ -79,9 +79,9 @@ dag_imf_api = create_dag_with_chains(
 )
 
 
-dag_landing_zone_validator = create_dag_with_chains(
-    dag_id="landing_zone_validator",
-    script_layers=[[f"{SCRIPTS_SUBFOLDER}landing_zone_validator.py"]],
+dag_delta_logging = create_dag_with_chains(
+    dag_id="delta_logging",
+    script_layers=[[f"delta_logging.py"]],
     default_args=DEFAULT_ARGS,
-    tags=["batch", "test"],
+    tags=["test"],
 )

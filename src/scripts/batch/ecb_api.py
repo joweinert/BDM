@@ -3,11 +3,11 @@ from util.delta_storage import DeltaStorageHandler
 
 # Define ECB API parameters
 ECB_URL = "https://data-api.ecb.europa.eu/service/data/"
-FLOW_REF = "EXR/D.USD.EUR.SP00.A"
+FLOW_REF = "EXR/D..EUR.SP00.A"
 PARAMS = {
     "format": "jsondata",
-    "startPeriod": "2021-01-01",
-    "endPeriod": "2021-01-31",
+    "startPeriod": "2021-02-01",
+    "endPeriod": "2021-02-28",
 }
 
 

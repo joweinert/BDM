@@ -2,6 +2,7 @@ x-common: &common-settings
   environment:
     # Pass all environment variables from .env to each service
     &env-vars 
+    DOCKER_ENV: "true"
     BIGDATA_MODE: ${BIGDATA_MODE}
     # Airflow Database
     POSTGRES_USER: ${POSTGRES_USER}
@@ -19,8 +20,13 @@ x-common: &common-settings
     MINIO_ENDPOINT: ${MINIO_ENDPOINT}
     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    MINIO_FIRST_TEAR_ANALYST_USER: ${MINIO_FIRST_TEAR_ANALYST_USER}
+    MINIO_FIRST_TEAR_ANALYST_PASSWORD: ${MINIO_FIRST_TEAR_ANALYST_PASSWORD}
+    MINIO_SECOND_TEAR_ANALYST_USER: ${MINIO_SECOND_TEAR_ANALYST_USER}
+    MINIO_SECOND_TEAR_ANALYST_PASSWORD: ${MINIO_SECOND_TEAR_ANALYST_PASSWORD}
     MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
     MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
+    EXPLOITATION_ZONE_BUCKET: ${EXPLOITATION_ZONE_BUCKET}
     # Kafka
     KAFKA_BROKER: ${KAFKA_BROKER}
     # Operations Database
@@ -38,7 +44,6 @@ services:
     <<: *common-settings
     image: postgres:latest
     container_name: airflow_postgres
-    profiles: ["pipeline", "trusted"]
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -54,7 +59,6 @@ services:
     <<: *common-settings
     image: apache/airflow:latest
     container_name: airflow_init
-    profiles: ["pipeline", "trusted"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,7 +82,6 @@ services:
       context: .
       dockerfile: docker/airflow/Dockerfile
     container_name: airflow-scheduler
-    profiles: ["pipeline", "trusted"]
     restart: always
     depends_on:
       airflow-init:
@@ -98,7 +101,7 @@ services:
     volumes:
       - ./src/dags:/opt/airflow/dags
       - ./src/util:/opt/airflow/util
-      - ./logs:/opt/airflow/logs
+      - ./logs/airflow:/opt/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
 
   airflow-webserver:
@@ -107,7 +110,6 @@ services:
       context: .
       dockerfile: docker/airflow/Dockerfile
     container_name: airflow-webserver
-    profiles: ["pipeline", "trusted"]
     restart: always
     depends_on:
       airflow-init:
@@ -128,20 +130,14 @@ services:
     volumes:
       - ./src/dags:/opt/airflow/dags
       - ./src/util:/opt/airflow/util
-      - ./docker/airflow/logs:/opt/airflow/logs
+      - ./logs/airflow:/opt/airflow/logs
 
   minio:
     <<: *common-settings
     build:
       context: .
       dockerfile: docker/minio/Dockerfile
-      args:
-        MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-        MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-        MINIO_DATA_BUCKET: ${MINIO_DATA_BUCKET}
-        MINIO_UNSTRUCTURED_BUCKET: ${MINIO_UNSTRUCTURED_BUCKET}
     container_name: minio
-    profiles: ["pipeline", "trusted"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -155,7 +151,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - ./data/minio_data:/data
 
   spark-master:
     <<: *common-settings
@@ -163,9 +159,11 @@ services:
       context: .
       dockerfile: docker/spark/Dockerfile
     container_name: spark-master
-    profiles: ["pipeline", "trusted"]
     environment:
       <<: *env-vars
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_DRIVER_MEMORY: 2g
+      SPARK_EXECUTOR_MEMORY: 2g
       SPARK_MODE: master
       SPARK_RPC_AUTHENTICATION_ENABLED: no
       SPARK_RPC_ENCRYPTION_ENABLED: no
@@ -176,8 +174,10 @@ services:
       - "7077:7077"
       - "8081:8080"
     volumes:
-      - ./src/scripts/batch:/opt/bitnami/spark/scripts
+      - ./src/scripts:/opt/bitnami/spark/scripts
+      - ./src/util:/opt/bitnami/spark/util
       - ./logs:/opt/bitnami/spark/logs
+      - ./gx:/opt/bitnami/spark/gx
 
   spark-worker-1:
     <<: *common-settings
@@ -185,16 +185,20 @@ services:
       context: .
       dockerfile: docker/spark/Dockerfile
     container_name: spark-worker-1
-    profiles: ["pipeline", "trusted"]
     environment:
       <<: *env-vars
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_DRIVER_MEMORY: 2g
+      SPARK_EXECUTOR_MEMORY: 2g
       SPARK_MODE: worker
       SPARK_USER: spark
     depends_on:
       - spark-master
     volumes:
-      - ./src/scripts/batch:/opt/bitnami/spark/scripts
+      - ./src/scripts:/opt/bitnami/spark/scripts
+      - ./src/util:/opt/bitnami/spark/util
       - ./logs:/opt/bitnami/spark/logs
+      - ./gx:/opt/bitnami/spark/gx
 
   spark-worker-2:
     <<: *common-settings
@@ -202,22 +206,25 @@ services:
       context: .
       dockerfile: docker/spark/Dockerfile
     container_name: spark-worker-2
-    profiles: ["pipeline", "trusted"]
     environment:
       <<: *env-vars
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_DRIVER_MEMORY: 2g
+      SPARK_EXECUTOR_MEMORY: 2g
       SPARK_MODE: worker
       SPARK_USER: spark
     depends_on:
       - spark-master
     volumes:
-      - ./src/scripts/batch:/opt/bitnami/spark/scripts
+      - ./src/scripts:/opt/bitnami/spark/scripts
+      - ./src/util:/opt/bitnami/spark/util
       - ./logs:/opt/bitnami/spark/logs
+      - ./gx:/opt/bitnami/spark/gx
 
   zookeeper:
     <<: *common-settings
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper
-    profiles: ["pipeline"]
     restart: always
     environment:
       <<: *env-vars
@@ -229,7 +236,6 @@ services:
     <<: *common-settings
     image: confluentinc/cp-kafka:latest
     container_name: kafka
-    profiles: ["pipeline"]
     restart: always
     depends_on:
       - zookeeper
@@ -256,7 +262,6 @@ services:
       context: .
       dockerfile: docker/app_backend/Dockerfile
     container_name: app_backend
-    profiles: ["pipeline"]
     ports:
       - "6969:6969"
     depends_on:
@@ -280,7 +285,6 @@ services:
       context: .
       dockerfile: docker/user_simulation/Dockerfile
     container_name: user_simulation
-    profiles: ["pipeline"]
     environment:
       BIGDATA_MODE: ${BIGDATA_MODE}
     depends_on:
@@ -295,7 +299,6 @@ services:
   operations_db:
     image: postgres:latest
     container_name: operations_db
-    profiles: ["pipeline"]
     restart: always
     environment:
       <<: *env-vars
@@ -305,7 +308,7 @@ services:
     ports:
       - "${OPS_DB_PORT}:${OPS_DB_PORT}"
     volumes:
-      - postgres-ops-data:/var/lib/postgresql/data
+      - ./data/postgres-ops-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -319,7 +322,6 @@ services:
       context: .
       dockerfile: docker/kafka/Dockerfile
     container_name: stock_producer
-    profiles: ["pipeline"]
     restart: always
     depends_on:
       kafka:
@@ -335,7 +337,6 @@ services:
       context: .
       dockerfile: docker/kafka/Dockerfile
     container_name: crypto_producer
-    profiles: ["pipeline"]
     restart: always
     depends_on:
       kafka:
@@ -345,23 +346,107 @@ services:
       DOCKER_ENV: "true"
     command: ["python", "streaming/producer/crypto_producer.py"]
 
-  consumer:
+  # consumer:
+  #   <<: *common-settings
+  #   build:
+  #     context: .
+  #     dockerfile: docker/kafka/Dockerfile
+  #   container_name: kafka_consumer
+  #   restart: always
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #   environment:
+  #     <<: *env-vars
+  #     DOCKER_ENV: "true"
+  #   command: ["python", "streaming/consumer/simple_consumer.py"]
+
+  snapshot_builder:
     <<: *common-settings
+    image: snapshot_builder:latest
     build:
       context: .
-      dockerfile: docker/kafka/Dockerfile
-    container_name: kafka_consumer
-    profiles: ["pipeline"]
-    restart: always
-    depends_on:
-      kafka:
-        condition: service_healthy
+      dockerfile: docker/snapshot_builder/Dockerfile
+    container_name: snapshot_builder
+    profiles: ["builder"]
     environment:
       <<: *env-vars
       DOCKER_ENV: "true"
-    command: ["python", "streaming/consumer/simple_consumer.py"]
+    command: ["tail", "-f", "/dev/null"]
+
+  # flink-jobmanager:
+  #   <<: *common-settings
+  #   build:
+  #     context: .
+  #     dockerfile: docker/flink/Dockerfile
+  #   container_name: flink-jobmanager
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #   environment:
+  #     <<: *env-vars
+  #     ENABLE_BUILT_IN_PLUGINS: flink-python-2.0.0.jar;flink-s3-fs-hadoop-2.0.0.jar
+  #   volumes:
+  #     - ./docker/flink/flink-conf.yaml:/opt/flink/conf/config.yaml:ro
+  #   ports:
+  #     - "8082:8081"       # Flink Web UI
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 12
+  #   command: jobmanager
+
+  # flink-taskmanager-1:
+  #   <<: *common-settings
+  #   build:
+  #     context: .
+  #     dockerfile: docker/flink/Dockerfile
+  #   container_name: flink-taskmanager-1
+  #   depends_on:
+  #     flink-jobmanager:
+  #       condition: service_started
+  #   environment:
+  #     <<: *env-vars
+  #     ENABLE_BUILT_IN_PLUGINS: flink-python-2.0.0.jar;flink-s3-fs-hadoop-2.0.0.jar
+  #   volumes:
+  #     - ./docker/flink/flink-conf.yaml:/opt/flink/conf/config.yaml:ro
+  #   command: taskmanager
+
+  # flink-taskmanager-2:
+  #   <<: *common-settings
+  #   build:
+  #     context: .
+  #     dockerfile: docker/flink/Dockerfile
+  #   container_name: flink-taskmanager-2
+  #   depends_on:
+  #     flink-jobmanager:
+  #       condition: service_started
+  #   environment:
+  #     <<: *env-vars
+  #     ENABLE_BUILT_IN_PLUGINS: flink-python-2.0.0.jar;flink-s3-fs-hadoop-2.0.0.jar
+  #   volumes:
+  #     - ./docker/flink/flink-conf.yaml:/opt/flink/conf/config.yaml:ro
+  #   command: taskmanager
+
+  # flink-submit:
+  #   <<: *common-settings
+  #   build:
+  #     context: .
+  #     dockerfile: docker/flink/Dockerfile
+  #   container_name: flink-submit
+  #   depends_on:
+  #     flink-jobmanager:
+  #       condition: service_healthy
+  #   environment:
+  #     <<: *env-vars
+  #     ENABLE_BUILT_IN_PLUGINS: flink-python-2.0.0.jar;flink-s3-fs-hadoop-2.0.0.jar
+  #   volumes:
+  #     - ./src/streaming/consumer:/opt/flink/scripts
+  #     - ./docker/flink/submit_all.sh:/opt/flink/submit_all.sh:ro
+  #     - ./docker/flink/flink-conf.yaml:/opt/flink/conf/config.yaml:ro
+  #   #command: ["bash","/opt/flink/submit_all.sh"]
+  #   command: ["bash","-c","/opt/flink/submit_all.sh; sleep infinity"]
 
 volumes:
   postgres-airflow_metadata:
-  postgres-ops-data:
-  minio_data:
