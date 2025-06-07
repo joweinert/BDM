@@ -7,4 +7,5 @@ RUN pip install -r requirements.txt
 WORKDIR /app
 COPY src/scripts/exploitation_zone /app/scripts
 
-ENTRYPOINT ["python", "/app/scripts/populate_duckdb.py"]
+#ENTRYPOINT ["python", "/app/scripts/populate_duckdb.py"]
+ENTRYPOINT ["python", "/app/scripts/build_datamarts.py"]

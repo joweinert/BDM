@@ -47,8 +47,7 @@ def _ensure_httpfs(con: duckdb.DuckDBPyConnection) -> None:
 
 # -----------------------------
 #  Singleton connection
-# -----------------------------
-@functools.lru_cache(maxsize=1)
+# --------------------------------
 def _connect() -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()
     _ensure_httpfs(con)

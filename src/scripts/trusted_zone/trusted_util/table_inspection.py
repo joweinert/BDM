@@ -1,16 +1,22 @@
 from util.delta_storage import DeltaStorageHandler
 import datetime, sys
 from contextlib import nullcontext
+import os
 
 TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-LOG_PATH = f"/opt/bitnami/spark/logs/delta_inspect/delta_inspect_{TIMESTAMP}.log"
-
+LOG_PATH = f"/opt/bitnami/spark/logs/delta_inspect"
+LOG_FILE = f"{LOG_PATH}/{TIMESTAMP}_table_inspection.log"
 
 def log_table_structure(df, table_name="", unique_val=None, writer=None):
     """
     Log the structure of the DataFrame to a file.
     """
-    cm = open(LOG_PATH, "w") if writer is None else nullcontext(writer)
+    if not os.path.exists(LOG_PATH):
+        os.mkdir(LOG_PATH)
+    cm = open(LOG_FILE, "w") if writer is None else nullcontext(writer)
+    
+    if not df:
+        return
 
     with cm as f:
         f.write(f"=== Table: {table_name} ===\n\n")
@@ -48,7 +54,7 @@ def log_table_structure(df, table_name="", unique_val=None, writer=None):
         except Exception as e:
             f.write(f"⚠️ Error collecting sample: {e}\n")
 
-    print(f"✅ Inspection written to {LOG_PATH}")
+    print(f"✅ Inspection written to {LOG_FILE}")
     return 0
 
 
@@ -58,7 +64,7 @@ if __name__ == "__main__":
     handler = DeltaStorageHandler(storage_path=base_path)
     # latest = sorted(handler.list_tables())[-1]
     try:
-        with open(LOG_PATH, "w") as f:
+        with open(LOG_FILE, "w") as f:
             for table in handler.list_tables():
                 df = handler.read_table(table)
                 log_table_structure(df, table_name=table, writer=f)

@@ -43,6 +43,7 @@ dag_ecb_api = create_dag_with_chains(
     dag_id="ecb_api",
     script_layers=[[f"{SCRIPTS_SUBFOLDER}ecb_api.py"]],
     tags=["batch", "ecb"],
+    default_args=DEFAULT_ARGS,
 )
 
 
