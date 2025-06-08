@@ -1,4 +1,11 @@
 duckdb
-dotenv
+python-dotenv
 numpy
 pandas
+matplotlib
+seaborn
+nltk
+scikit-learn==1.3.2
+scipy
+notebook
+ipykernel
