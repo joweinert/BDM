@@ -127,10 +127,6 @@ def _setup_validator(context, cfg):
     return suite
 
 
-# ---------------------------------------------------------------------------
-# Expectation suites – one function per datasource
-# ---------------------------------------------------------------------------
-
 
 def setup_imf_validators(context):
     cfg = IMF_CONFIG["indicators"]
@@ -363,12 +359,6 @@ def setup_ops_db_validators(context):
 
     # unique request_id
     suite.add_expectation(gxe.ExpectColumnValuesToBeUnique(column="request_id"))
-    # ── end kyc_metadata ─────────────────────────────────────────────────────────
-
-
-# ---------------------------------------------------------------------------
-# Bootstrap – create/overwrite GE context and register all suites
-# ---------------------------------------------------------------------------
 
 
 def init_gx_context(override: bool = False):
