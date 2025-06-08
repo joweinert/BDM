@@ -1,7 +1,7 @@
 x-common: &common-settings
   environment:
     # Pass all environment variables from .env to each service
-    &env-vars 
+    &env-vars
     DOCKER_ENV: "true"
     BIGDATA_MODE: ${BIGDATA_MODE}
     # Airflow Database
@@ -38,7 +38,6 @@ x-common: &common-settings
     # Finnhub API
     FINNHUB_API_KEY: ${FINNHUB_API_KEY}
 
-
 services:
   postgres:
     <<: *common-settings
@@ -57,7 +56,7 @@ services:
 
   airflow-init:
     <<: *common-settings
-    image: apache/airflow:latest
+    image: apache/airflow:2.7.3
     container_name: airflow_init
     depends_on:
       postgres:
@@ -279,7 +278,6 @@ services:
       start_period: 60s
     command: uvicorn src.app_backend:app --host 0.0.0.0 --port 6969
 
-
   user_simulation:
     build:
       context: .
@@ -314,7 +312,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
 
   stock_producer:
     <<: *common-settings

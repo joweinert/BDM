@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from pyspark.sql.utils import AnalysisException
 from typing import Optional, List
 
-
 class DeltaStorageHandler:
     def __init__(self, storage_path="Landing_Zone"):
         """
@@ -47,7 +46,10 @@ class DeltaStorageHandler:
             .config("spark.hadoop.fs.s3a.access.key", self.access_key)
             .config("spark.hadoop.fs.s3a.secret.key", self.secret_key)
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
-            .config("spark.jars.packages", "io.delta:delta-core_2.12:2.3.0")
+            .config(
+                "spark.jars.packages",
+                "io.delta:delta-core_2.12:2.1.0,org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.2"
+)
             .getOrCreate()
         )
     
@@ -400,3 +402,5 @@ class DeltaStorageHandler:
         if not table.startswith("s3a://"):
             table = self.get_delta_path(table)
         self.spark.sql(f"ALTER TABLE delta.`{table}` SET TBLPROPERTIES ('quarantine' = '{str(quarantine).lower()}')")
+        
+
