@@ -1,6 +1,5 @@
 FROM apache/airflow:2.7.3
 
-
 # Switch to root for file operations
 USER root
 WORKDIR /opt/airflow
